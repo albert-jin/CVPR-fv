@@ -230,9 +230,8 @@ Every `--exp_name` writes to `output/<exp_name>/`:
 
 ```bibtex
 @article{jin2026cvprfv,
-  title  = {Claim Verifiability Prediction-based Rumor Detection for
-             Fact Verification},
-  author = {...},
+  title  = {Verifiability-Aware Fact Verification: Leveraging Weak Supervised Task Transfer from Rumor Detection for Reliable Claim Assessment},
+  journal = {Pattern Recognition Letter},
   year   = {2026},
   note   = {under review}
 }
