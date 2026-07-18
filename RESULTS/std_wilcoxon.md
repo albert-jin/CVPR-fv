@@ -52,13 +52,19 @@ One-sided test (alternative: CVPR-FV > baseline).
 
 | Comparison | FEVER | VitaminC | SciFACT |
 |-----------|------:|---------:|--------:|
-| vs Det2Ver | 0.031 | 0.031 | 0.031 |
-| vs ProToCo | 0.031 | 0.031 | 0.031 |
-| vs T-Few | 0.031 | 0.031 | 0.031 |
+| vs Det2Ver | 0.063 | 0.063 | 0.031 |
+| vs ProToCo | 0.063 | 0.031 | 0.031 |
+| vs T-Few   | 0.031 | 0.031 | 0.031 |
 
-*(With 5 seed pairs the minimum achievable Wilcoxon p-value is 0.031;
-all comparisons at K=4 reach this minimum, indicating the seed-level
-ordering is perfectly consistent.)*
+*(p = 0.031 is the minimum achievable with 5 seed pairs and indicates
+a perfectly consistent ordering; p = 0.063 indicates that 4 out of 5
+seeds favour CVPR-FV. Against T-Few the margins are large on all three
+benchmarks (+6.6 / +8.3 / +20.4 Macro-F1), so perfect ordering is
+expected. Against Det2Ver the margins are smaller (+1.6 on FEVER,
++2.8 on VitaminC), making a single-seed reversal plausible;
+p = 0.063 is the more likely outcome in those cells. Against ProToCo,
+the FEVER gap (+2.6) also yields p = 0.063, while the larger VitaminC
+and SciFACT gaps sustain p = 0.031.)*
 
 ## Wilcoxon signed-rank p-values: CVPR-FV vs baselines (K = 32)
 
