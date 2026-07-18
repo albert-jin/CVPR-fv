@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# CVPR-FV .gitignore
+# ---------------------------------------------------------------------------
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local dev environments
+.venv/
+env/
+.env
+.env.*
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Experiment outputs — checkpoints / TensorBoard logs / caches
+output/
+runs/
+lightning_logs/
+tb_logs/
+wandb/
+
+# Adapter checkpoints
+*.pt
+*.pth
+*.bin
+
+# Figures shipped for README rendering — keep them in git.
+!figures/
+!figures/**
+
+# Raw / intermediate data dumps (only the shipped JSONLs are versioned)
+data/rumor/*_raw/
+data/rumor/*.zip
+data/rumor/*.tar.gz
+data/rumor/cvp_cache/
+data/rumor/few_shot/
+data/few_shot/
+!data/few_shot/.gitkeep
+!data/rumor/few_shot/.gitkeep
+!data/rumor/cvp_cache/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Author-only reference notes that must NOT be published:
+#   - the master hyperparameter sheet is a private convenience doc.
+# ---------------------------------------------------------------------------
+HYPERPARAMETERS.md
