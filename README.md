@@ -9,7 +9,7 @@ decomposition-based intermediate judgments.
 ## Motivation
 
 <p align="center">
-  <img src="figures/introfig.png" width="88%" alt="Motivation: intrinsically unverifiable claims cause inconsistent intermediate judgments in decomposition-based fact verification."/>
+  <img src="figures/introfig.png" width="68%" alt="Motivation: intrinsically unverifiable claims cause inconsistent intermediate judgments in decomposition-based fact verification."/>
 </p>
 
 Decomposition-based fact verification (Det2Ver-style) turns a ternary
@@ -17,8 +17,8 @@ verification decision into three binary yes/no judgments over
 `true / uncertain / false` hypothesis states, then synchronises them
 back into `{SUPPORT, REFUTE, NEI}` via a hard lookup table. This works
 when the claim is genuinely falsifiable, but it becomes brittle for
-claims that are **intrinsically unverifiable** — e.g. normative,
-vague, or unfalsifiable statements — where the three binary judgments
+claims that are **intrinsically unverifiable**, e.g. normative,
+vague, or unfalsifiable statements, where the three binary judgments
 frequently contradict each other and force the label synchroniser into
 spurious flips.
 
@@ -30,11 +30,11 @@ spurious flips.
 
 CVPR-FV addresses this by adding two pieces on top of Det2Ver:
 
-* **Claim Verifiability Prediction (CVP)** — an auxiliary head that
+* **Claim Verifiability Prediction (CVP)**, an auxiliary head that
   estimates whether a claim is intrinsically verifiable
   (`v = p(Verifiable | c) ∈ [0, 1]`), trained with weak supervision
   from rumor-detection corpora using pseudo-verifiability labels.
-* **CVP-guided probabilistic aggregation** — the three binary
+* **CVP-guided probabilistic aggregation**, the three binary
   confidences `q_true, q_false, q_uncertain` are turned into soft label
   likelihoods, then combined with a verifiability-aware prior
   `π(y | v)^λ` in log-linear form:
@@ -145,7 +145,7 @@ python train.py \
     --exp_name fever_K4_seed0
 ```
 
-Full sweep — `bash run_fs.sh` (5 seeds × 3 backbones × 4 K-shot × 3 datasets).
+Full sweep, `bash run_fs.sh` (5 seeds × 3 backbones × 4 K-shot × 3 datasets).
 
 ### Zero-shot
 
@@ -199,7 +199,7 @@ python cvp_pseudo_labeler.py \
     --tau 2
 ```
 
-The default LLM flag (cue **f**) is an offline regex proxy — fully
+The default LLM flag (cue **f**) is an offline regex proxy, fully
 deterministic and dependency-free. To use an external API-based judge,
 wrap it in a Python function and pass it to
 `label_rd_corpus(..., llm_flag_fn=my_llm_flag)`.
@@ -208,22 +208,22 @@ wrap it in a Python function and pass it to
 
 Every `--exp_name` writes to `output/<exp_name>/`:
 
-* `best.pt` — adapter weights at the highest validation Macro-F1.
-* `finish.pt` — adapter weights at the end of training.
-* `log/version_0/events.out.*` — TensorBoard scalars
+* `best.pt`, adapter weights at the highest validation Macro-F1.
+* `finish.pt`, adapter weights at the end of training.
+* `log/version_0/events.out.*`, TensorBoard scalars
   (`train/*_loss`, `val/macro_f1`, `val/f1_SUPPORT`, `val/f1_REFUTE`,
   `val/f1_NEI`).
 
 ## Troubleshooting
 
-* **OOM** — drop `--precision` to `bf16`, reduce `--train_batch_size`,
+* **OOM**, drop `--precision` to `bf16`, reduce `--train_batch_size`,
   and increase `--grad_accum_factor`.
-* **Slow eval** — lower `--eval_batch_size` or shorten `--max_seq_len`
+* **Slow eval**, lower `--eval_batch_size` or shorten `--max_seq_len`
   to 200.
-* **CVP class imbalance** — inspect the counts printed by
+* **CVP class imbalance**, inspect the counts printed by
   `cvp_pseudo_labeler.py`; if `Unverifiable` rows are < 50, lower τ or
   extend the cue lexicon in `configs.CVP_CUES`.
-* **Cache collision** — delete `data/few_shot/<dataset>/*.jsonl` and
+* **Cache collision**, delete `data/few_shot/<dataset>/*.jsonl` and
   `data/rumor/cvp_cache/<rd>/*.jsonl` to force resampling.
 
 ## Citation
