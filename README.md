@@ -1,10 +1,11 @@
 # CVPR-FV
 
-**Claim Verifiability Prediction-based Rumor detection for Fact
-Verification.** A verifiability-aware fact-verification framework that
-extends Det2Ver with an auxiliary *Claim Verifiability Prediction* (CVP)
-task and a *CVP-guided score aggregator* over the
-decomposition-based intermediate judgments.
+**Verifiability-Aware Fact Verification: Leveraging Weakly Supervised Task
+Transfer from Rumor Detection for Reliable Claim Assessment.** CVPR-FV is a
+verifiability-aware fact-verification framework that extends Det2Ver with an
+auxiliary *Claim Verifiability Prediction* (CVP) task and a documented
+*CVP-guided score-fusion heuristic* over decomposition-based intermediate
+judgments.
 
 ## Motivation
 
@@ -25,8 +26,14 @@ spurious flips.
 ## Framework
 
 <p align="center">
-  <img src="figures/CVPRfvmodelnewest.png" width="98%" alt="CVPR-FV framework: CVP auxiliary task plus CVP-guided heuristic score aggregation."/>
+  <img src="figures/CVPRfvmodel-image2.png" width="100%" alt="Current CVPR-FV framework from Figure 2 of the manuscript: CVP produces verifiability compatibility scores, decomposition produces evidence-conditioned scores, and a heuristic score-fusion rule predicts Support, Refute, or NEI."/>
 </p>
+
+This is the same framework asset used as Figure 2 in the current manuscript.
+The upper inference branch maps the claim to a deterministic verifiability
+confidence and compatibility scores; the lower branch maps the claim-evidence
+pair to decomposition scores. Their combination is a heuristic decision score,
+not a Bayesian posterior.
 
 CVPR-FV addresses this by adding two pieces on top of Det2Ver:
 
@@ -79,10 +86,12 @@ CVPR_FV/
 ├── data_reader.py           # FV + CVP datasets, consolidation prompting, DataModule
 ├── model.py                 # CVPR-FV LightningModule (joint loss + score aggregation)
 ├── train.py                 # CLI entry point
+├── run_conflict_rate.sh     # one-command checkpoint-to-table reproduction
 ├── reproduce_conflict_rate.py # checkpoint-to-table conflict experiment driver
 ├── analyze_conflict_rate.py # audited per-instance conflict/F1 analysis
 ├── tests/                   # dependency-free conflict-analysis tests
 ├── patches/                 # Det2Ver per-instance export compatibility patch
+├── figures/CVPRfvmodel-image2.png # current manuscript Figure 2
 ├── requirements.txt
 ├── run_fs.sh                # few-shot experiments
 ├── run_zs.sh                # zero-shot experiments
@@ -244,7 +253,15 @@ git clone https://github.com/albert-jin/Det2Ver.git ../Det2Ver
 git -C ../Det2Ver apply ../CVPR-fv/patches/det2ver_conflict_export.patch
 ```
 
-Then run:
+Then run the complete checkpoint-to-table workflow from the repository root:
+
+```bash
+bash run_conflict_rate.sh
+```
+
+The shell entry point uses the two checkpoint paths below by default. Override
+them with the `DET2VER_CHECKPOINT`, `CVPR_CHECKPOINT`, or `PYTHON_BIN`
+environment variables when necessary. The equivalent direct command is:
 
 ```bash
 python reproduce_conflict_rate.py \
@@ -306,10 +323,11 @@ python -m unittest discover -s tests -v
 
 ```bibtex
 @article{jin2026cvprfv,
-  title  = {Verifiability-Aware Fact Verification: Leveraging Weak Supervised Task Transfer from Rumor Detection for Reliable Claim Assessment},
-  journal = {Pattern Recognition Letter},
+  title   = {Verifiability-Aware Fact Verification: Leveraging Weakly Supervised Task Transfer from Rumor Detection for Reliable Claim Assessment},
+  author  = {Gao, Yang and Jin, Weiqiang and Liu, Yang and Tang, Shixiang and Zhou, Yanghao and Zhang, Ziwei and Zhao, Biao},
+  journal = {Pattern Recognition Letters},
   year   = {2026},
-  note   = {under review}
+  note   = {Manuscript under review}
 }
 ```
 
