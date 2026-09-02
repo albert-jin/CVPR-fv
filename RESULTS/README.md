@@ -12,3 +12,9 @@ section it answers.
 | [`conflict_rate.md`](conflict_rate.md) | spurious-conflict rate stratified by CVP score v | R2 #5 |
 | [`matched_budget.md`](matched_budget.md) | Det2Ver(200) vs CVPR-FV(200) matched-budget comparison | R2 #6 |
 | [`std_wilcoxon.md`](std_wilcoxon.md) | mean ± std over 5 seeds + Wilcoxon signed-rank p-values | R2 #10 |
+
+The conflict-rate experiment is executable from the repository root with
+`python reproduce_conflict_rate.py ...`. It produces a count-bearing Markdown
+table, a JSON summary with input hashes, and a per-instance JSONL audit trail;
+see [`conflict_rate.md`](conflict_rate.md#reproduction) for both supported input
+modes.

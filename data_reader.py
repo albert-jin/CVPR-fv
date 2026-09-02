@@ -14,7 +14,7 @@ Two datasets are produced:
 Both are unified into ``CVPRDataModule``. At training time the FV rows
 and the CVP rows are interleaved in one loader with a ``task_flag``
 field. At evaluation time only FV rows are yielded and grouped by
-``instance_idx`` so ``model.py`` can compute the three-way probabilistic
+``instance_idx`` so ``model.py`` can compute the three-way heuristic score
 aggregation per FV instance.
 """
 
@@ -238,6 +238,10 @@ class FVDataset(Dataset):
                     'int_prefix_idx': var['int_prefix_idx'],
                     'template_idx': var['template_idx'],
                     'instance_idx': instance_idx,
+                    # Preserve the dataset identifier as well as the local row
+                    # index.  The former makes cross-model analyses robust to
+                    # accidental reordering of the validation JSONL file.
+                    'instance_id': d.get('id', instance_idx),
                     'variant_idx': v_idx,
                     'claim': d['claim'],
                     'task_flag': 0,     # FV
@@ -257,6 +261,7 @@ class FVDataset(Dataset):
             'int_prefix_idx': row['int_prefix_idx'],
             'template_idx': row['template_idx'],
             'instance_idx': row['instance_idx'],
+            'instance_id': row['instance_id'],
             'variant_idx': row['variant_idx'],
             'claim': row['claim'],
             'task_flag': row['task_flag'],
@@ -291,6 +296,7 @@ class CVPDataset(Dataset):
                 'cvp_label_idx': CVPLabel2Idx[cvp_label],
                 'answer_label': answer_idx,
                 'instance_idx': -(i + 1),
+                'instance_id': row.get('id', -(i + 1)),
                 'variant_idx': 0,
                 'claim': row.get('claim', ''),
                 'task_flag': 1,
@@ -310,6 +316,7 @@ class CVPDataset(Dataset):
             'int_prefix_idx': -1,
             'template_idx': -1,
             'instance_idx': row['instance_idx'],
+            'instance_id': row['instance_id'],
             'variant_idx': 0,
             'claim': row['claim'],
             'task_flag': row['task_flag'],
@@ -347,6 +354,7 @@ def collate_fn(batch):
             'int_prefix_idx': b['int_prefix_idx'],
             'template_idx': b['template_idx'],
             'instance_idx': b['instance_idx'],
+            'instance_id': b['instance_id'],
             'variant_idx': b['variant_idx'],
             'claim': b['claim'],
         } for b in batch],
@@ -453,6 +461,7 @@ def build_cvp_inference_batch(claims: List[str]):
             'int_prefix_idx': -1,
             'template_idx': -1,
             'instance_idx': i,
+            'instance_id': i,
             'variant_idx': 0,
             'claim': claim,
             'task_flag': 1,

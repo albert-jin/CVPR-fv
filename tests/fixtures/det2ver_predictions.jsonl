@@ -1,0 +1,3 @@
+{"instance_id": 10, "instance_idx": 99, "claim": "claim-10", "gold_label": "NEI", "prediction": "SUPPORT", "q_true": 0.9, "q_uncertain": 0.9, "q_false": 0.9, "binary_answers_true_uncertain_false": [0, 0, 0], "lookup_conflict": true}
+{"instance_id": 20, "instance_idx": 98, "claim": "claim-20", "gold_label": "SUPPORT", "prediction": "SUPPORT", "q_true": 0.9, "q_uncertain": 0.1, "q_false": 0.1, "binary_answers_true_uncertain_false": [0, 1, 1], "lookup_conflict": false}
+{"instance_id": 30, "instance_idx": 97, "claim": "claim-30", "gold_label": "NEI", "prediction": "NEI", "q_true": 0.1, "q_uncertain": 0.9, "q_false": 0.1, "binary_answers_true_uncertain_false": [1, 0, 1], "lookup_conflict": false}

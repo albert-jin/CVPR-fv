@@ -1,0 +1,133 @@
+diff --git a/data_reader.py b/data_reader.py
+--- a/data_reader.py
++++ b/data_reader.py
+@@ -316,7 +316,11 @@ class V2DDataSet(Dataset):
+                     'int_prefix_idx': var_inst['int_prefix_idx'],
+                     'template_idx': var_inst['template_idx'],
+                     'instance_idx': instance_idx,
++                    # Keep the source dataset ID for stable joins with other
++                    # models; ``instance_idx`` remains for within-run grouping.
++                    'instance_id': d.get('id', instance_idx),
+                     'variant_idx': v_idx,
++                    'claim': d.get('claim', ''),
+                     'task_flag': 0,  # FV
+                 })
+
+@@ -333,7 +337,9 @@ class V2DDataSet(Dataset):
+             'int_prefix_idx': row['int_prefix_idx'],
+             'template_idx': row['template_idx'],
+             'instance_idx': row['instance_idx'],
++            'instance_id': row['instance_id'],
+             'variant_idx': row['variant_idx'],
++            'claim': row['claim'],
+             'task_flag': row['task_flag'],
+         }
+
+@@ -373,7 +379,9 @@ class RumorDataSet(Dataset):
+                 'int_prefix_idx': -1,
+                 'template_idx': -1,
+                 'instance_idx': -(i + 1),   # negative to distinguish from FV
++                'instance_id': d.get('id', -(i + 1)),
+                 'variant_idx': 0,
++                'claim': d.get('claim', ''),
+                 'task_flag': 1,             # RD
+             })
+
+@@ -390,7 +398,9 @@ class RumorDataSet(Dataset):
+             'int_prefix_idx': row['int_prefix_idx'],
+             'template_idx': row['template_idx'],
+             'instance_idx': row['instance_idx'],
++            'instance_id': row['instance_id'],
+             'variant_idx': row['variant_idx'],
++            'claim': row['claim'],
+             'task_flag': row['task_flag'],
+         }
+
+@@ -423,7 +433,9 @@ def collate_fn(batch):
+         'int_prefix_idx': b['int_prefix_idx'],
+         'template_idx': b['template_idx'],
+         'instance_idx': b['instance_idx'],
++        'instance_id': b['instance_id'],
+         'variant_idx': b['variant_idx'],
++        'claim': b['claim'],
+     } for b in batch]
+
+     return {
+diff --git a/model.py b/model.py
+--- a/model.py
++++ b/model.py
+@@ -29,6 +29,7 @@ same ``instance_idx`` and returns one three-way prediction per FV
+ instance so that Macro-F1 can be computed.
+ """
+
++import json
+ import os
+ import re
+ from collections import defaultdict
+@@ -249,6 +250,7 @@ class Det2Ver(LightningModule):
+         for i in range(input_ids.size(0)):
+             self._val_predictions.append({
+                 'instance_idx': meta[i]['instance_idx'],
++                'instance_id': meta[i]['instance_id'],
+                 'int_prefix_idx': meta[i]['int_prefix_idx'],
+                 'template_idx': meta[i]['template_idx'],
+                 'binary_pred': int(pred_binary[i].item()),
+@@ -256,6 +258,7 @@ class Det2Ver(LightningModule):
+                 'gold_v_label': int(v_label[i].item()),
+                 'choices_scores': choices_scores[i].detach().cpu().tolist(),
+                 'task_flag': int(batch['task_flag'][i].item()),
++                'claim': meta[i].get('claim', ''),
+             })
+         return None
+
+@@ -317,12 +320,35 @@ class Det2Ver(LightningModule):
+                 buckets[row['instance_idx']].append(row)
+
+         y_true, y_pred = [], []
++        export_rows: List[Dict] = []
+         for instance_idx, rows in buckets.items():
+             gold = rows[0]['gold_v_label']
+             pred = self._sync_labels(rows)
+             y_true.append(gold)
+             y_pred.append(pred)
+
++            ordered = {row['int_prefix_idx']: row for row in rows}
++            binary_answers = [ordered[i]['binary_pred'] for i in range(len(IntPres))]
++            answer_tensor = torch.tensor(binary_answers, dtype=torch.long)
++            lookup_conflict = not bool((_MAP_ROWS == answer_tensor.unsqueeze(0)).all(dim=1).any())
++
++            yes_probs = []
++            for i in range(len(IntPres)):
++                scores = torch.tensor(ordered[i]['choices_scores'], dtype=torch.float32)
++                yes_probs.append(float(torch.softmax(-scores, dim=0)[0].item()))
++            export_rows.append({
++                'instance_idx': int(instance_idx),
++                'instance_id': rows[0]['instance_id'],
++                'claim': rows[0].get('claim', ''),
++                'gold_label': Idx2VLabel[int(gold)],
++                'q_true': yes_probs[0],
++                'q_uncertain': yes_probs[1],
++                'q_false': yes_probs[2],
++                'binary_answers_true_uncertain_false': binary_answers,
++                'lookup_conflict': lookup_conflict,
++                'prediction': Idx2VLabel[int(pred)],
++            })
++
+         if y_true:
+             macro_f1 = f1_score(y_true, y_pred, average='macro')
+         else:
+@@ -330,6 +356,14 @@ class Det2Ver(LightningModule):
+         print(f'\n[val] Macro-F1 = {macro_f1:.4f}   ({len(y_true)} instances)')
+         self.log('val/macro_f1', macro_f1, prog_bar=True)
+
++        prediction_dir = os.path.join(configs.exp_root, configs.exp_name)
++        os.makedirs(prediction_dir, exist_ok=True)
++        prediction_path = os.path.join(prediction_dir, 'predictions.jsonl')
++        with open(prediction_path, 'w', encoding='utf-8') as stream:
++            for row in export_rows:
++                stream.write(json.dumps(row, ensure_ascii=False) + '\n')
++        print(f'[val] wrote {len(export_rows)} predictions to {prediction_path}')
++
+         # Early stopping bookkeeping.
+         if macro_f1 > self._best_metric:
+             self._best_metric = macro_f1

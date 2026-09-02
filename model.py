@@ -26,15 +26,18 @@ Aggregation (Section 3.2):
     ℓ_Sup = q_true·(1-q_false)·(1-q_uncertain)
     ℓ_Ref = q_false·(1-q_true)·(1-q_uncertain)
     ℓ_NEI = q_uncertain·(1-q_true)·(1-q_false)
-    p_det(y) = ℓ_y / Σℓ
+    d_y = (ℓ_y + ε) / Σ(ℓ + ε)
 
-    π(NEI|v) = (1-v) + γ·v
-    π(SUP|v) = π(REF|v) = (1-γ)·v/2
+    r_NEI(v) = (1-v) + γ·v
+    r_SUP(v) = r_REF(v) = (1-γ)·v/2
 
-    p(y|c,E) ∝ p_det(y) · π(y|v)^λ
-    ŷ = argmax_y p(y|c,E)
+    a_y = d_y · r_y(v)^λ
+    ŷ = argmax_y a_y
+
+The normalized ``a_y`` values are decision scores, not a Bayesian posterior.
 """
 
+import json
 import os
 import re
 from collections import defaultdict
@@ -287,6 +290,7 @@ class CVPRFV(LightningModule):
         for i in range(input_ids.size(0)):
             self._val_predictions.append({
                 'instance_idx': meta[i]['instance_idx'],
+                'instance_id': meta[i]['instance_id'],
                 'int_prefix_idx': meta[i]['int_prefix_idx'],
                 'template_idx': meta[i]['template_idx'],
                 'yes_prob': float(yes_prob[i].item()),
@@ -322,34 +326,36 @@ class CVPRFV(LightningModule):
         return out
 
     # ------------------------------------------------------------------
-    # Probabilistic aggregation
+    # Heuristic score aggregation
     # ------------------------------------------------------------------
 
     @staticmethod
     def _aggregate(q_true: float, q_false: float, q_uncertain: float,
                    v: float, lam: float, gamma: float) -> Tuple[int, np.ndarray]:
-        """Return (predicted_v_label_idx, posterior_probs).
+        """Return (predicted_v_label_idx, normalized_decision_scores).
 
         The output indexing is ``VLabel2Idx`` (SUPPORT=0, REFUTE=1, NEI=2).
+        Normalization is convenient for logging only; these values are not
+        interpreted as a Bayesian posterior.
         """
         eps = 1e-12
-        # Decomposition-based label likelihoods (main.tex Eqs 6-8).
+        # Decomposition-based compatibility scores (main text Eqs 6-8).
         l_sup = q_true * (1 - q_false) * (1 - q_uncertain)
         l_ref = q_false * (1 - q_true) * (1 - q_uncertain)
         l_nei = q_uncertain * (1 - q_true) * (1 - q_false)
-        det_l = np.array([l_sup, l_ref, l_nei])
-        det = det_l / max(det_l.sum(), eps)                     # (3,) in VLabel2Idx order
+        raw_scores = np.array([l_sup, l_ref, l_nei])
+        det_scores = (raw_scores + eps) / (raw_scores + eps).sum()
 
-        # Verifiability-aware prior (Eqs 9-10).
-        pi_nei = (1 - v) + gamma * v
-        pi_sr = (1 - gamma) * v / 2.0
-        prior = np.array([pi_sr, pi_sr, pi_nei])                # SUPPORT, REFUTE, NEI
+        # Verifiability compatibility scores (main text Eqs 9-10).
+        r_nei = (1 - v) + gamma * v
+        r_sr = (1 - gamma) * v / 2.0
+        compatibility = np.array([r_sr, r_sr, r_nei])          # SUPPORT, REFUTE, NEI
 
-        # Log-linear combination (Eq 11).
-        log_p = np.log(det + eps) + lam * np.log(prior + eps)
-        posterior = np.exp(log_p - log_p.max())
-        posterior = posterior / max(posterior.sum(), eps)
-        return int(posterior.argmax()), posterior
+        # Log-linear heuristic fusion (main text Eq 11).
+        log_a = np.log(det_scores + eps) + lam * np.log(compatibility + eps)
+        decision_scores = np.exp(log_a - log_a.max())
+        decision_scores = decision_scores / max(decision_scores.sum(), eps)
+        return int(decision_scores.argmax()), decision_scores
 
     # ------------------------------------------------------------------
     # Validation epoch end — aggregate and report per-class F1 + macro-F1
@@ -379,6 +385,7 @@ class CVPRFV(LightningModule):
         v_map = self.cvp_predict(unique_claims) if self.cfg.use_cvp else {c: 0.5 for c in unique_claims}
 
         y_true, y_pred, y_v = [], [], []
+        export_rows: List[Dict] = []
         for instance_idx, rows in buckets.items():
             # Pick one row per prefix (first one — templates are randomised).
             q = {}
@@ -389,12 +396,34 @@ class CVPRFV(LightningModule):
             q_false = q.get(2, 0.5)
             claim = claim_of_instance[instance_idx]
             v = v_map.get(claim, 0.5)
-            pred, _ = self._aggregate(q_true, q_false, q_uncertain, v,
-                                       lam=configs.lam_prior,
-                                       gamma=configs.nei_floor_gamma)
+            pred, decision_scores = self._aggregate(
+                q_true, q_false, q_uncertain, v,
+                lam=configs.lam_prior, gamma=configs.nei_floor_gamma,
+            )
             y_true.append(rows[0]['gold_v_label'])
             y_pred.append(pred)
             y_v.append(v)
+
+            binary_answers = [
+                0 if q_true >= 0.5 else 1,
+                0 if q_uncertain >= 0.5 else 1,
+                0 if q_false >= 0.5 else 1,
+            ]
+            valid_answer_rows = {(0, 1, 1), (1, 0, 1), (1, 1, 0)}
+            export_rows.append({
+                'instance_idx': int(instance_idx),
+                'instance_id': rows[0]['instance_id'],
+                'claim': claim,
+                'gold_label': configs.Idx2VLabel[int(rows[0]['gold_v_label'])],
+                'q_true': float(q_true),
+                'q_false': float(q_false),
+                'q_uncertain': float(q_uncertain),
+                'v': float(v),
+                'binary_answers_true_uncertain_false': binary_answers,
+                'lookup_conflict': tuple(binary_answers) not in valid_answer_rows,
+                'prediction': configs.Idx2VLabel[int(pred)],
+                'decision_scores_support_refute_nei': decision_scores.tolist(),
+            })
 
         macro_f1 = f1_score(y_true, y_pred, average='macro')
         # Per-class F1 (SUPPORT, REFUTE, NEI in VLabel2Idx order).
@@ -405,6 +434,16 @@ class CVPRFV(LightningModule):
         print(f'\n[val] macro_f1={macro_f1:.4f} | '
               f'SUPPORT={per_class[0]:.4f} REFUTE={per_class[1]:.4f} NEI={per_class[2]:.4f} | '
               f'mean v={np.mean(y_v):.3f}')
+
+        # Overwrite on every validation pass so the final/best-model evaluation
+        # leaves one self-contained per-instance file for downstream analyses.
+        prediction_dir = os.path.join(configs.exp_root, configs.exp_name)
+        os.makedirs(prediction_dir, exist_ok=True)
+        prediction_path = os.path.join(prediction_dir, 'predictions.jsonl')
+        with open(prediction_path, 'w', encoding='utf-8') as stream:
+            for row in export_rows:
+                stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+        print(f'[val] wrote {len(export_rows)} predictions to {prediction_path}')
 
         # Early stopping.
         if macro_f1 > self._best_metric:

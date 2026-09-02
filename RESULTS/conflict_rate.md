@@ -25,6 +25,13 @@ We ran Det2Ver (T0-3B, seed=0, K=4-shot) on the FEVER validation split
 We partition instances into three verifiability strata defined by the
 CVP confidence v output by CVPR-FV.
 
+The released code makes this protocol auditable rather than reading a stored
+conflict column. Both `model.py` files export `q_true`, `q_uncertain`, and
+`q_false` for every validation instance. `analyze_conflict_rate.py` thresholds
+those probabilities at 0.5, recomputes the lookup-table mismatch, joins the two
+models by the original FEVER instance ID, verifies gold labels and redundant
+fields, and writes both aggregate and per-instance results.
+
 ## Results
 
 | v stratum | #instances | Det2Ver conflict rate | CVPR-FV conflict rate | CVPR-FV NEI-F1 |
@@ -35,25 +42,45 @@ CVP confidence v output by CVPR-FV.
 
 ## Interpretation
 
-1. **Conflict rate is strongly anti-correlated with v.** Claims predicted
+1. **Conflict rate is strongly associated with v.** Claims predicted
    as unverifiable (v < 0.3) produce conflicts at a rate 4.2× higher than
-   highly verifiable claims (v ≥ 0.6) in Det2Ver. This directly validates
-   the causal story in Section 1.
+   highly verifiable claims (v ≥ 0.6) in Det2Ver. This supports the motivating
+   observation in Section 1; the stratified analysis alone does not establish
+   causality.
 
-2. **CVPR-FV reduces conflicts for low-v claims.** By routing low-v claims
-   toward NEI via the verifiability-aware prior, CVPR-FV cuts the conflict
-   rate from 38.4 % to 12.1 % on the most unverifiable stratum.
+2. **CVPR-FV has fewer lookup mismatches for low-v claims.** Applying the same
+   diagnostic predicate to both models yields 38.4 % versus 12.1 % on the
+   lowest-verifiability stratum. CVPR-FV itself does not use this lookup table
+   for its final decision; it uses score fusion for every instance.
 
 3. **NEI-F1 benefit is concentrated on low-v claims.** The +0.18 NEI-F1
    gain (0.67 vs ≈ 0.49 for Det2Ver on the same stratum) confirms that
    the improvement reported in the main paper's Table 1 is at least partly
    attributable to better handling of unverifiable claims.
 
-4. **High-v claims are unaffected.** For v ≥ 0.6 the conflict rates are
-   virtually identical (9.2 % vs 8.9 %), showing that CVPR-FV's prior
+4. **High-v claims are largely unaffected.** For v ≥ 0.6 the conflict rates are
+   virtually identical (9.2 % vs 8.9 %), showing that CVPR-FV's score rule
    does not interfere with clearly verifiable instances.
 
-These results also support the design choice of τ = 2 for the CVP
-pseudo-label threshold: it is precisely the low-v tail (v < 0.3) that
-drives the unverifiability-induced instability CVPR-FV is designed to
-mitigate.
+## Reproduction
+
+From the two trained adapter checkpoints:
+
+```bash
+python reproduce_conflict_rate.py \
+  --det2ver-checkpoint ../Det2Ver/output/fever_K4_seed0/best.pt \
+  --cvpr-checkpoint output/fever_K4_seed0/best.pt
+```
+
+Or, from existing evaluation exports:
+
+```bash
+python reproduce_conflict_rate.py \
+  --det2ver-pred ../Det2Ver/output/fever_K4_seed0/predictions.jsonl \
+  --cvpr-pred output/fever_K4_seed0/predictions.jsonl
+```
+
+This produces a Markdown table with integer numerators, a machine-readable
+summary with input SHA-256 hashes, and a joined per-instance JSONL audit trail.
+The two trained checkpoints or prediction exports must be released alongside
+the code; they are not part of the current source tree.

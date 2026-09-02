@@ -3,7 +3,7 @@
 **Claim Verifiability Prediction-based Rumor detection for Fact
 Verification.** A verifiability-aware fact-verification framework that
 extends Det2Ver with an auxiliary *Claim Verifiability Prediction* (CVP)
-task and a *CVP-guided probabilistic aggregator* over the
+task and a *CVP-guided score aggregator* over the
 decomposition-based intermediate judgments.
 
 ## Motivation
@@ -25,7 +25,7 @@ spurious flips.
 ## Framework
 
 <p align="center">
-  <img src="figures/CVPRfvmodelnewest.png" width="98%" alt="CVPR-FV framework: CVP auxiliary task + CVP-guided probabilistic aggregation."/>
+  <img src="figures/CVPRfvmodelnewest.png" width="98%" alt="CVPR-FV framework: CVP auxiliary task plus CVP-guided heuristic score aggregation."/>
 </p>
 
 CVPR-FV addresses this by adding two pieces on top of Det2Ver:
@@ -34,19 +34,24 @@ CVPR-FV addresses this by adding two pieces on top of Det2Ver:
   estimates whether a claim is intrinsically verifiable
   (`v = p(Verifiable | c) ∈ [0, 1]`), trained with weak supervision
   from rumor-detection corpora using pseudo-verifiability labels.
-* **CVP-guided probabilistic aggregation**, the three binary
-  confidences `q_true, q_false, q_uncertain` are turned into soft label
-  likelihoods, then combined with a verifiability-aware prior
-  `π(y | v)^λ` in log-linear form:
+* **CVP-guided score aggregation**, the three per-decomposition
+  Yes-probabilities `q_true, q_false, q_uncertain` are turned into
+  decomposition scores, then combined with verifiability compatibility
+  scores in log-linear form:
 
   ```
   ℓ_Sup = q_true·(1-q_false)·(1-q_uncertain)
   ℓ_Ref = q_false·(1-q_true)·(1-q_uncertain)
   ℓ_NEI = q_uncertain·(1-q_true)·(1-q_false)
-  π(NEI|v) = (1-v) + γ·v
-  π(SUP|v) = π(REF|v) = (1-γ)·v / 2
-  p(y|c,E) ∝ p_det(y) · π(y|v)^λ
+  d_y = (ℓ_y + ε) / Σ(ℓ + ε)
+  r_NEI(v) = (1-v) + γ·v
+  r_SUP(v) = r_REF(v) = (1-γ)·v / 2
+  a_y = d_y · r_y(v)^λ
   ```
+
+  `d_y`, `r_y(v)`, and `a_y` are decision scores. The fusion is a
+  documented heuristic, not a Bayesian posterior or conditional-probability
+  derivation.
 
 Both heads share one LoRA-adapted backbone (T0-3B, Qwen2.5-3B, or
 Llama-3.1-8B).
@@ -58,7 +63,7 @@ Llama-3.1-8B).
 | Component | Det2Ver | CVPR-FV |
 |-----------|---------|---------|
 | Auxiliary task | Rumor detection (binary real/fake) | **Claim Verifiability Prediction** (`Verifiable / Unverifiable`) with pseudo-labels |
-| Label synchronization | Hard lookup table + probability-ranking fallback | **Soft label likelihoods** + verifiability-aware prior `π(y\|v)^λ` |
+| Label synchronization | Hard lookup table + probability-ranking fallback | **Soft decomposition scores** + verifiability-guided score fusion `d_y r_y(v)^λ` |
 | Backbones | T0-3B only | **T0-3B, Qwen2.5-3B, Llama-3.1-8B** (single CLI flag) |
 | Reporting | Macro-F1 only | Macro-F1 **+ per-class F1** (`SUPPORT / REFUTE / NEI`) and mean±std over seeds |
 
@@ -72,8 +77,12 @@ CVPR_FV/
 ├── utils.py                 # LoRA / (IA)^3 wrapper, seeding, helpers
 ├── cvp_pseudo_labeler.py    # heuristic u(c) score + weak-supervision label rule
 ├── data_reader.py           # FV + CVP datasets, consolidation prompting, DataModule
-├── model.py                 # CVPR-FV LightningModule (joint loss + prob aggregation)
+├── model.py                 # CVPR-FV LightningModule (joint loss + score aggregation)
 ├── train.py                 # CLI entry point
+├── reproduce_conflict_rate.py # checkpoint-to-table conflict experiment driver
+├── analyze_conflict_rate.py # audited per-instance conflict/F1 analysis
+├── tests/                   # dependency-free conflict-analysis tests
+├── patches/                 # Det2Ver per-instance export compatibility patch
 ├── requirements.txt
 ├── run_fs.sh                # few-shot experiments
 ├── run_zs.sh                # zero-shot experiments
@@ -171,16 +180,16 @@ BACKBONE=qwen2.5-3b bash run_ablations.sh
   <img src="figures/ablaNoCVP.png" width="82%" alt="Ablation: performance drop after removing the CVP module."/>
 </p>
 
-**Probabilistic aggregation vs. deterministic label mapping.**
+**CVP-guided score aggregation vs. Det2Ver synchronization.**
 
 <p align="center">
-  <img src="figures/ablaHardSynC2.png" width="82%" alt="Ablation: probabilistic aggregation vs. deterministic label mapping."/>
+  <img src="figures/ablaHardSynC2.png" width="82%" alt="Ablation: CVP-guided score aggregation versus Det2Ver lookup-then-fallback synchronization."/>
 </p>
 
 **Hyperparameter sensitivity (λ, γ).**
 
 <p align="center">
-  <img src="figures/ablaHyper1.png" width="82%" alt="Hyperparameter sensitivity for λ (prior strength)."/>
+  <img src="figures/ablaHyper1.png" width="82%" alt="Hyperparameter sensitivity for λ (score-fusion strength)."/>
 </p>
 
 <p align="center">
@@ -210,9 +219,76 @@ Every `--exp_name` writes to `output/<exp_name>/`:
 
 * `best.pt`, adapter weights at the highest validation Macro-F1.
 * `finish.pt`, adapter weights at the end of training.
+* `predictions.jsonl`, one row per validation instance with the three
+  Yes-probabilities, conflict indicator, CVP score (CVPR-FV), and final label.
 * `log/version_0/events.out.*`, TensorBoard scalars
   (`train/*_loss`, `val/macro_f1`, `val/f1_SUPPORT`, `val/f1_REFUTE`,
   `val/f1_NEI`).
+
+## Reproducing the spurious-conflict analysis
+
+The experiment has two explicit stages: both models export one row per FEVER
+validation instance, and the analysis joins those exports and recomputes the
+lookup-table mismatch. The analysis does **not** trust a precomputed conflict
+flag. It derives the `(true, uncertain, false)` Yes/No triple from
+`q_true`, `q_uncertain`, and `q_false` at threshold 0.5 and checks it against
+the three valid Det2Ver lookup rows.
+
+### From trained checkpoints (complete reproduction)
+
+Provide the two trained adapter checkpoints used for the T0-3B, seed-0,
+`K=4` FEVER experiment:
+
+```bash
+git clone https://github.com/albert-jin/Det2Ver.git ../Det2Ver
+git -C ../Det2Ver apply ../CVPR-fv/patches/det2ver_conflict_export.patch
+```
+
+Then run:
+
+```bash
+python reproduce_conflict_rate.py \
+  --det2ver-checkpoint ../Det2Ver/output/fever_K4_seed0/best.pt \
+  --cvpr-checkpoint output/fever_K4_seed0/best.pt
+```
+
+The driver performs evaluation-only passes over all 9,985 FEVER validation
+instances and writes three artifacts:
+
+* `RESULTS/conflict_rate_reproduced.md`, the human-readable table with integer
+  conflict counts, rates, and both models' NEI-F1;
+* `RESULTS/conflict_rate_summary.json`, the same results in machine-readable
+  form plus SHA-256 fingerprints of both prediction inputs;
+* `RESULTS/conflict_rate_instances.jsonl`, the joined per-instance audit trail.
+
+Model checkpoints are not included in this source tree. To make the published
+experiment independently executable, release the two checkpoints (or their
+already-generated `predictions.jsonl` files) and record their download URL and
+hashes in `RESULTS/conflict_rate.md`.
+
+### From existing prediction exports
+
+If the evaluation passes have already been run, re-analyze their exports with:
+
+```bash
+python reproduce_conflict_rate.py \
+  --det2ver-pred ../Det2Ver/output/fever_K4_seed0/predictions.jsonl \
+  --cvpr-pred output/fever_K4_seed0/predictions.jsonl
+```
+
+Current model exports carry the original dataset `instance_id`, local
+`instance_idx`, claim, gold/final labels, all three Yes-probabilities, and the
+redundant binary-answer/conflict fields. The analyzer joins on `instance_id`,
+checks IDs, claims, gold labels, probability ranges, exported binary answers,
+and exported conflict flags, and fails loudly on any mismatch. Older exports
+without `instance_id` remain supported through a clearly signalled
+`instance_idx` fallback.
+
+Run the lightweight checks with:
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ## Troubleshooting
 
