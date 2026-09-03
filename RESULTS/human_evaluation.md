@@ -20,9 +20,9 @@ claims.
 three rumor detection corpora shipped with the repository
 (LIAR / FakeNewsNet / COVID-19 Fake News). For each corpus we took
 100 claims split 50/50 between our predicted `Verifiable` and
-`Unverifiable` pseudo-labels. Sampling was seeded (`np.random.seed(0)`)
-so the exact 300 IDs are reproducible from
-`data/rumor/cvp_cache/*/100-per-class.jsonl`.
+`Unverifiable` pseudo-labels. Sampling was seeded (`--seed 0`) and is
+implemented by `RESULTS/scripts/sample_human_eval.py`, which regenerates the
+deterministic pseudo-labels and writes the 300-row annotation sheet.
 
 **Annotators.** Three annotators independently labelled every claim as
 `Verifiable`, `Unverifiable`, or `Uncertain`, given only the claim text
@@ -123,31 +123,21 @@ the easy majority.
 
 Together with the τ / w_f sensitivity study reported in the main paper
 and with the label-flip robustness report in
-[`R1-01b_label_flip_robustness.md`](R1-01b_label_flip_robustness.md),
+[`label_flip_robustness.md`](label_flip_robustness.md),
 this analysis rules out the ``arbitrary cues / label noise / circular
 reasoning'' concern raised by Reviewer #1.
 
 ## 5. Reproducing this study
 
 ```bash
-# 1. dump the same 300 claims we used
-python cvp_pseudo_labeler.py \
-    --input data/rumor/liar_train.jsonl \
-    --output /tmp/liar_cvp.jsonl
-python cvp_pseudo_labeler.py \
-    --input data/rumor/fnn_train.jsonl \
-    --output /tmp/fnn_cvp.jsonl
-python cvp_pseudo_labeler.py \
-    --input data/rumor/covid_train.jsonl \
-    --output /tmp/covid_cvp.jsonl
-
-# 2. sample the stratified 300 (script provided in RESULTS/scripts)
+# 1. regenerate the deterministic, stratified 300-row annotation sheet
 python RESULTS/scripts/sample_human_eval.py \
     --seed 0 --per_corpus 100 --out /tmp/human_eval_pool.csv
 
-# 3. hand the CSV to annotators; the resolver script is in the same folder
-python RESULTS/scripts/resolve_agreement.py --input filled.csv
+# 2. hand the CSV to annotators, then recompute every agreement statistic
+python RESULTS/scripts/resolve_agreement.py \
+    --input filled.csv --output-json /tmp/human_eval_metrics.json
 ```
 
-Raw per-annotator CSVs are anonymised and archived at
-`RESULTS/raw/human_eval/` in the anonymous release.
+For an archived run, store the anonymised filled CSV under
+`RESULTS/raw/human_eval/` and pass it directly to `resolve_agreement.py`.

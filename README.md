@@ -81,12 +81,15 @@ Llama-3.1-8B).
 ```
 CVPR_FV/
 ├── configs.py               # global config (prompts, CVP cues, aggregator λ / γ, backbones)
+├── aggregation.py           # score fusion and faithful Det2Ver synchronization
 ├── utils.py                 # LoRA / (IA)^3 wrapper, seeding, helpers
 ├── cvp_pseudo_labeler.py    # heuristic u(c) score + weak-supervision label rule
 ├── data_reader.py           # FV + CVP datasets, consolidation prompting, DataModule
 ├── model.py                 # CVPR-FV LightningModule (joint loss + score aggregation)
 ├── train.py                 # CLI entry point
 ├── run_conflict_rate.sh     # one-command checkpoint-to-table reproduction
+├── run_matched_budget.sh    # Table 1 Det2Ver(200/source) endpoint reruns
+├── run_label_flip_robustness.sh # pseudo-label corruption experiment
 ├── reproduce_conflict_rate.py # checkpoint-to-table conflict experiment driver
 ├── analyze_conflict_rate.py # audited per-instance conflict/F1 analysis
 ├── tests/                   # dependency-free conflict-analysis tests
@@ -96,6 +99,8 @@ CVPR_FV/
 ├── run_fs.sh                # few-shot experiments
 ├── run_zs.sh                # zero-shot experiments
 ├── run_ablations.sh         # ablation studies
+├── Det2Ver/                 # vendored matched-budget baseline implementation
+├── RESULTS/scripts/         # human-study and case-study analysis utilities
 ├── data/
 │   ├── fever_train.jsonl    FEVER / VitaminC / SciFACT
 │   ├── scifact_*.jsonl
@@ -175,13 +180,23 @@ bash run_zs.sh
 
 ### Ablations
 
-`bash run_ablations.sh` covers the no-CVP baseline, the λ sweep, the γ
-sweep, and the three single-source CVP configurations. To pin the
-backbone:
+`run_ablations.sh` maps directly to every experiment in Section 4.3: the
+three-backbone no-CVP test at `K=32`, faithful Det2Ver synchronization at
+`K=16`, the full λ sweep, its fixed-score control, and the λ × γ grid at
+`K=32`. Select one family instead of launching the full grid:
 
 ```bash
-BACKBONE=qwen2.5-3b bash run_ablations.sh
+ABLATION=no_cvp bash run_ablations.sh
+ABLATION=det2ver_sync bash run_ablations.sh
+ABLATION=lambda bash run_ablations.sh
+ABLATION=fixed_control bash run_ablations.sh
+ABLATION=gamma_lambda bash run_ablations.sh
 ```
+
+Set `BACKBONE_ONLY=qwen2.5-3b` to restrict the no-CVP family. The
+pseudo-label corruption and matched-budget baselines have separate entry
+points: `bash run_label_flip_robustness.sh` and
+`bash run_matched_budget.sh`, respectively.
 
 **Effect of removing the CVP module (`--use_cvp false`).**
 
@@ -246,14 +261,9 @@ the three valid Det2Ver lookup rows.
 ### From trained checkpoints (complete reproduction)
 
 Provide the two trained adapter checkpoints used for the T0-3B, seed-0,
-`K=4` FEVER experiment:
-
-```bash
-git clone https://github.com/albert-jin/Det2Ver.git ../Det2Ver
-git -C ../Det2Ver apply ../CVPR-fv/patches/det2ver_conflict_export.patch
-```
-
-Then run the complete checkpoint-to-table workflow from the repository root:
+`K=4` FEVER experiment, then run the complete checkpoint-to-table workflow
+from the repository root. The Det2Ver implementation with per-instance export
+support is included under `Det2Ver/`:
 
 ```bash
 bash run_conflict_rate.sh
@@ -265,7 +275,7 @@ environment variables when necessary. The equivalent direct command is:
 
 ```bash
 python reproduce_conflict_rate.py \
-  --det2ver-checkpoint ../Det2Ver/output/fever_K4_seed0/best.pt \
+  --det2ver-checkpoint Det2Ver/output/fever_K4_seed0/best.pt \
   --cvpr-checkpoint output/fever_K4_seed0/best.pt
 ```
 
@@ -278,10 +288,8 @@ instances and writes three artifacts:
   form plus SHA-256 fingerprints of both prediction inputs;
 * `RESULTS/conflict_rate_instances.jsonl`, the joined per-instance audit trail.
 
-Model checkpoints are not included in this source tree. To make the published
-experiment independently executable, release the two checkpoints (or their
-already-generated `predictions.jsonl` files) and record their download URL and
-hashes in `RESULTS/conflict_rate.md`.
+For an archived run, record the checkpoint or `predictions.jsonl` identifiers
+and SHA-256 hashes in `RESULTS/conflict_rate.md`.
 
 ### From existing prediction exports
 
@@ -289,7 +297,7 @@ If the evaluation passes have already been run, re-analyze their exports with:
 
 ```bash
 python reproduce_conflict_rate.py \
-  --det2ver-pred ../Det2Ver/output/fever_K4_seed0/predictions.jsonl \
+  --det2ver-pred Det2Ver/output/fever_K4_seed0/predictions.jsonl \
   --cvpr-pred output/fever_K4_seed0/predictions.jsonl
 ```
 

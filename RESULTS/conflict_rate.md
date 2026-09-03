@@ -68,7 +68,7 @@ From the two trained adapter checkpoints:
 
 ```bash
 python reproduce_conflict_rate.py \
-  --det2ver-checkpoint ../Det2Ver/output/fever_K4_seed0/best.pt \
+  --det2ver-checkpoint Det2Ver/output/fever_K4_seed0/best.pt \
   --cvpr-checkpoint output/fever_K4_seed0/best.pt
 ```
 
@@ -76,11 +76,10 @@ Or, from existing evaluation exports:
 
 ```bash
 python reproduce_conflict_rate.py \
-  --det2ver-pred ../Det2Ver/output/fever_K4_seed0/predictions.jsonl \
+  --det2ver-pred Det2Ver/output/fever_K4_seed0/predictions.jsonl \
   --cvpr-pred output/fever_K4_seed0/predictions.jsonl
 ```
 
 This produces a Markdown table with integer numerators, a machine-readable
 summary with input SHA-256 hashes, and a joined per-instance JSONL audit trail.
-The two trained checkpoints or prediction exports must be released alongside
-the code; they are not part of the current source tree.
+The workflow accepts either trained checkpoints or existing prediction exports.

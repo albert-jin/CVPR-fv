@@ -46,7 +46,7 @@ _CUE_NAMES = [name for name, _ in configs.CVP_CUES]
 
 
 # ---------------------------------------------------------------------------
-# Offline heuristic proxy for cue (f) — the paper's "LLM flag".
+# Offline heuristic proxy for cue (f), the context-insufficiency cue.
 # ---------------------------------------------------------------------------
 #
 # The paper obtains cue (f) by prompting GPT-5.2. That is a paid API call
@@ -58,7 +58,7 @@ _CUE_NAMES = [name for name, _ in configs.CVP_CUES]
 # well below 100 %.
 #
 # Callers can override the default proxy by passing an ``llm_flag_fn``
-# to ``label_rd_corpus`` — e.g. wrap an actual GPT-5.2 call.
+# to ``label_rd_corpus``, for example by wrapping an external judge.
 
 _LLM_PROXY_PATTERNS = [
     re.compile(r'!{2,}'),                                    # !!! …

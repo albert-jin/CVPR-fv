@@ -6,7 +6,7 @@
 
 This report provides a detailed qualitative analysis of five representative
 instances from the official FEVER and SciFACT validation sets, examining
-when the CVP-guided probabilistic aggregation helps and when it can fail.
+when the CVP-guided heuristic score aggregation helps and when it can fail.
 For each instance we report:
 
 * **Claim** — the full claim text
@@ -15,7 +15,7 @@ For each instance we report:
 * **v** — CVP verifiability confidence (0 = unverifiable, 1 = verifiable)
 * **q_true / q_false / q_uncertain** — three per-decomposition Yes-probabilities
 * **Det2Ver prediction** — label from the original two-stage lookup+fallback
-* **CVPR-FV prediction** — label from the likelihood-then-prior aggregation
+* **CVPR-FV prediction** — label from score-transform-then-fuse aggregation
 
 ---
 
@@ -35,11 +35,11 @@ For each instance we report:
 | **Det2Ver** | REFUTE ✗ |
 | **CVPR-FV** | NEI ✓ |
 
-**Analysis.** The absolutist quantifier "always" triggers the unverifiability
-prior (v = 0.24). Det2Ver's three binary outputs (Yes/No/No pattern falls
+**Analysis.** The absolutist quantifier "always" yields a low verifiability
+score (v = 0.24). Det2Ver's three binary outputs (Yes/No/No pattern falls
 outside the lookup table) are routed through the fallback probability-ranking,
-which mis-assigns REFUTE. CVPR-FV's prior shifts the posterior mass toward
-NEI (π(NEI|0.24) ≈ 0.78), yielding the correct label.
+which mis-assigns REFUTE. CVPR-FV's compatibility rule increases the NEI
+decision score ($r_{NEI}(0.24) \approx 0.78$), yielding the correct label.
 
 ---
 
@@ -60,7 +60,7 @@ NEI (π(NEI|0.24) ≈ 0.78), yielding the correct label.
 **Analysis.** The vague quantifier "many" and the lack of a specific attendance
 figure suppress v to 0.31. Det2Ver's q_uncertain ≈ 0.52 and q_true ≈ 0.44 are
 close enough to produce a conflicting triple, which the fallback misclassifies
-as SUPPORT. CVPR-FV's prior overrides this and correctly outputs NEI.
+as SUPPORT. CVPR-FV's compatibility score changes the final ranking and correctly outputs NEI.
 
 ---
 
@@ -80,7 +80,7 @@ as SUPPORT. CVPR-FV's prior overrides this and correctly outputs NEI.
 | **Det2Ver** | SUPPORT ✓ |
 | **CVPR-FV** | SUPPORT ✓ |
 
-**Analysis.** No unverifiability cues; v = 0.78. The prior has negligible effect;
+**Analysis.** No unverifiability cues; v = 0.78. The compatibility score has negligible effect;
 both systems read the evidence cleanly and agree on SUPPORT.
 
 ---
@@ -125,8 +125,8 @@ systems produce the correct REFUTE label.
 suppressing v to 0.28. However, this claim is objectively verifiable — it
 makes a specific, evidence-backed statement about a biological mechanism. The
 decomposition outputs (q_true = 0.76) correctly point to SUPPORT, but
-CVPR-FV's over-cautious prior (π(NEI|0.28) ≈ 0.75) overwhelms the likelihood
-signal, routing the final prediction to NEI. This illustrates a key limitation
+CVPR-FV's over-cautious compatibility rule ($r_{NEI}(0.28) \approx 0.75$)
+outweighs the decomposition score, routing the final prediction to NEI. This illustrates a key limitation
 of the current cue lexicon: domain-specific quantitative language (common in
 scientific claims) can spuriously activate unverifiability cues, even when the
 claim is objectively checkable.
@@ -144,11 +144,11 @@ claim is objectively checkable.
 | 5 | SciFACT #756 | SUPPORT | 0.28 | SUPPORT ✓ | NEI ✗ | Det2Ver |
 
 **Key take-aways:**
-1. CVPR-FV's CVP prior consistently helps for claims with absolutist or hedged
-   language whose gold label is NEI — the prior overrides conflicting binary
+1. CVPR-FV's CVP compatibility score helps for claims with absolutist or hedged
+   language whose gold label is NEI by re-ranking conflicting binary
    decompositions.
 2. For verifiable claims with no unverifiability cues (v ≥ 0.71), CVPR-FV and
-   Det2Ver are effectively equivalent; the prior plays a negligible role.
+   Det2Ver are effectively equivalent; the compatibility score plays a negligible role.
 3. The primary failure mode is domain-specific quantitative language (e.g.,
    "many proteins") that legitimately conveys scale in scientific writing but
    triggers the vague-quantifier cue. Extending the cue lexicon with domain-

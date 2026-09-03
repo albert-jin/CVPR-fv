@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-DET2VER_CHECKPOINT="${DET2VER_CHECKPOINT:-../Det2Ver/output/fever_K4_seed0/best.pt}"
+DET2VER_CHECKPOINT="${DET2VER_CHECKPOINT:-Det2Ver/output/fever_K4_seed0/best.pt}"
 CVPR_CHECKPOINT="${CVPR_CHECKPOINT:-output/fever_K4_seed0/best.pt}"
 
 "$PYTHON_BIN" reproduce_conflict_rate.py \

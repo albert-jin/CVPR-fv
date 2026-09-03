@@ -12,15 +12,15 @@ The framework has two learnable components:
    ``1/1/1/1/1/2``, unverifiability threshold ``τ = 2``).
 
 2. **Decomposition-based fact verifier** — reuses Det2Ver's three-prefix
-   consolidation prompting to produce three binary confidences
+   consolidation prompting to produce three continuous Yes-scores
    ``q_true, q_false, q_uncertain``.
 
 Both components share a LoRA-adapted PLM (T0-3B by default; Qwen2.5-3B
 and Llama-3.1-8B are also supported).
 
-The final label is obtained via the **CVP-guided probabilistic
-aggregation** (Section 3.2 of the paper), *not* via Det2Ver's hard
-lookup table.
+The final label is obtained via the **CVP-guided heuristic score
+aggregation** (Section 3.2 of the paper), *not* via Det2Ver's
+lookup-then-fallback synchronizer.
 """
 
 import os
@@ -71,7 +71,7 @@ Idx2DLabel = {v: k for k, v in DLabel2Idx.items()}
 # Every ternary label maps back to the yes/no answer expected under each
 # internal prefix (Det2Ver Table I). CVPR-FV uses these only for training the
 # decomposition head; the final ternary label is computed by the
-# probabilistic aggregation, not this table.
+# heuristic score aggregation, not this table.
 MapTab = {
     'SUPPORT': ['Yes, it is.', "No, it isn't.", "No, it isn't."],
     'NEI':     ["No, it isn't.", 'Yes, it is.', "No, it isn't."],
@@ -127,12 +127,13 @@ CVP_LLM_WEIGHT = 2                    # weight of cue (f)
 CVP_TAU = 2                           # unverifiability threshold τ
 
 # ---------------------------------------------------------------------------
-# 3. Probabilistic aggregation hyperparameters (main.tex Section 3.2)
+# 3. Score-aggregation hyperparameters (main.tex Section 3.2)
 # ---------------------------------------------------------------------------
 
-lam_prior = 0.5          # λ — influence of verifiability prior
+lam_prior = 0.5          # λ — score-fusion strength (legacy CLI name)
 nei_floor_gamma = 0.1    # γ — small constant keeping NEI mass non-zero
 lam_cvp = 1.0            # λ_cvp — weight on CVP loss in joint objective
+aggregation_mode = 'score_fusion'  # score_fusion | det2ver | fixed_control
 
 # ---------------------------------------------------------------------------
 # 4. Data locations
@@ -237,6 +238,7 @@ use_cvp = True          # False = ablate CVP → reverts to decomposition only
 # The paper reports ~200 auxiliary CVP training examples per rumor dataset,
 # 1:1 verifiable/unverifiable ratio (Section 4.1 Implementation Details).
 cvp_total_per_dataset = 200
+cvp_label_flip_rate = 0.0
 rd_dataset_names_used = list(rd_dataset_names)
 
 # ---------------------------------------------------------------------------

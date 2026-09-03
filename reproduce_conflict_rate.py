@@ -21,7 +21,7 @@ from typing import List
 
 
 HERE = Path(__file__).resolve().parent
-DET2VER_DIR = HERE.parent / "Det2Ver"
+DET2VER_DIR = HERE / "Det2Ver"
 
 
 def run(command: List[str], cwd: Path) -> None:
@@ -35,14 +35,13 @@ def evaluate_from_checkpoints(args: argparse.Namespace) -> tuple[Path, Path]:
     det_reader_path = DET2VER_DIR / "data_reader.py"
     if not det_model_path.is_file() or not det_reader_path.is_file():
         raise FileNotFoundError(
-            f"expected a sibling Det2Ver checkout at {DET2VER_DIR}; see patches/README.md"
+            f"expected the vendored Det2Ver implementation at {DET2VER_DIR}"
         )
     det_model_source = det_model_path.read_text(encoding="utf-8")
     det_reader_source = det_reader_path.read_text(encoding="utf-8")
     if "predictions.jsonl" not in det_model_source or "'instance_id'" not in det_reader_source:
         raise RuntimeError(
-            "the sibling Det2Ver checkout lacks the per-instance export patch; "
-            "apply patches/det2ver_conflict_export.patch first"
+            "the vendored Det2Ver implementation lacks per-instance export support"
         )
 
     det_checkpoint = args.det2ver_checkpoint.resolve()

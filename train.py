@@ -7,7 +7,7 @@ Examples
     python train.py --dataset fever --shot_num 4 --seed 0 \
                     --backbone t0-3b --exp_name fever_K4_seed0
 
-    # Ablation: no CVP (falls back to hard-mapping decomposition):
+    # Ablation: no CVP (uses decomposition scores without CVP guidance):
     python train.py --dataset scifact --shot_num 16 --use_cvp false \
                     --exp_name scifact_K16_noCVP
 
@@ -42,15 +42,26 @@ def parse_args():
     p.add_argument('--zero_shot', type=_bool, default=False)
     p.add_argument('--use_cvp', type=_bool, default=True)
     p.add_argument('--cvp_total_per_dataset', type=int, default=configs.cvp_total_per_dataset)
+    p.add_argument('--cvp_label_flip_rate', type=float,
+                   default=configs.cvp_label_flip_rate,
+                   help='Probability of flipping each selected CVP pseudo-label (noise ablation).')
 
     p.add_argument('--backbone', type=str, default=configs.backbone,
                    choices=list(configs.BACKBONES))
     p.add_argument('--lam_prior', type=float, default=configs.lam_prior,
-                   help='λ — verifiability prior strength.')
+                   help='λ — verifiability score-fusion strength (legacy option name).')
     p.add_argument('--nei_floor_gamma', type=float, default=configs.nei_floor_gamma,
                    help='γ — small NEI floor keeping non-zero mass under verifiable claims.')
     p.add_argument('--lam_cvp', type=float, default=configs.lam_cvp,
                    help='λ_cvp — weight of CVP loss in the joint objective.')
+    p.add_argument(
+        '--aggregation_mode', type=str, default=configs.aggregation_mode,
+        choices=['score_fusion', 'det2ver', 'fixed_control'],
+        help=(
+            'Inference rule: CVP-guided score fusion; faithful Det2Ver '
+            'lookup-then-fallback; or the fixed compatibility control.'
+        ),
+    )
 
     p.add_argument('--lr', type=float, default=configs.lr)
     p.add_argument('--num_steps', type=int, default=configs.num_steps)
@@ -83,12 +94,14 @@ def apply_args(args):
     configs.zero_shot = args.zero_shot
     configs.use_cvp = args.use_cvp
     configs.cvp_total_per_dataset = args.cvp_total_per_dataset
+    configs.cvp_label_flip_rate = args.cvp_label_flip_rate
 
     configs.backbone = args.backbone
     configs.pretrained_model_path = configs.resolve_backbone_path(args.backbone)
     configs.lam_prior = args.lam_prior
     configs.nei_floor_gamma = args.nei_floor_gamma
     configs.lam_cvp = args.lam_cvp
+    configs.aggregation_mode = args.aggregation_mode
 
     configs.lr = args.lr
     configs.num_steps = args.num_steps
@@ -128,6 +141,7 @@ def main():
         zero_shot=args.zero_shot,
         use_cvp=args.use_cvp,
         cvp_total_per_dataset=args.cvp_total_per_dataset,
+        cvp_label_flip_rate=args.cvp_label_flip_rate,
     )
 
     model = CVPRFV(backbone=args.backbone)

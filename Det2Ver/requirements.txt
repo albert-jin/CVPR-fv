@@ -1,0 +1,13 @@
+# Core dependencies for Det2Ver
+# Pin ranges match the T-Few / ProToCo stack the paper builds on.
+
+torch>=1.13,<2.5
+pytorch-lightning>=1.7,<2.3
+transformers>=4.30,<4.42
+accelerate>=0.20
+numpy>=1.22
+scikit-learn>=1.0
+tqdm>=4.64
+sentencepiece>=0.1.99   # required by T0/T5 tokenizer
+protobuf<5              # avoids sentencepiece <-> protobuf 5.x fallout
+tensorboard>=2.9

@@ -131,7 +131,12 @@ class CVPReader:
     """Load and pseudo-label rumor detection instances for CVP."""
 
     def __init__(self, rd_names: List[str], total_per_dataset: int,
-                 seed: int = 0, llm_flag_fn=None):
+                 seed: int = 0, llm_flag_fn=None,
+                 label_flip_rate: float = 0.0):
+        if not 0.0 <= label_flip_rate <= 1.0:
+            raise ValueError(
+                f'label_flip_rate must be in [0, 1], got {label_flip_rate}'
+            )
         self.rows: List[dict] = []
         per_class = max(total_per_dataset // 2, 1)
         for rd_name in rd_names:
@@ -168,6 +173,33 @@ class CVPReader:
             self.rows.extend(subset)
             if FS_CacheUse:
                 save_jsonl(subset, cache_file)
+
+        # Noise-robustness ablation. Keep the cached pseudo-labelled samples
+        # clean: corruption is applied to per-run copies only, after all source
+        # corpora have been assembled. The run seed makes the mask reproducible.
+        if label_flip_rate > 0.0 and self.rows:
+            rng = np.random.default_rng(seed)
+            corrupted_rows: List[dict] = []
+            flip_count = 0
+            for row in self.rows:
+                copied = dict(row)
+                copied['cvp_label_clean'] = copied['cvp_label']
+                if rng.random() < label_flip_rate:
+                    copied['cvp_label'] = (
+                        'Unverifiable'
+                        if copied['cvp_label'] == 'Verifiable'
+                        else 'Verifiable'
+                    )
+                    copied['cvp_label_flipped'] = True
+                    flip_count += 1
+                else:
+                    copied['cvp_label_flipped'] = False
+                corrupted_rows.append(copied)
+            self.rows = corrupted_rows
+            print(
+                f'[CVPReader] flipped {flip_count}/{len(self.rows)} CVP labels '
+                f'(requested rate={label_flip_rate:g}, seed={seed})'
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +423,7 @@ class CVPRDataModule(LightningDataModule):
                  zero_shot: bool = False,
                  use_cvp: bool = True,
                  cvp_total_per_dataset: int = 200,
+                 cvp_label_flip_rate: float = 0.0,
                  llm_flag_fn=None):
         super().__init__()
         assert dataset_name in dataset_names
@@ -407,7 +440,8 @@ class CVPRDataModule(LightningDataModule):
             if rd_only in configs.rd_dataset_names:
                 rd_names = [rd_only]
             reader = CVPReader(rd_names, cvp_total_per_dataset, seed=seed,
-                               llm_flag_fn=llm_flag_fn)
+                               llm_flag_fn=llm_flag_fn,
+                               label_flip_rate=cvp_label_flip_rate)
             if reader.rows:
                 self.cvp_train_dataset = CVPDataset(reader.rows)
 

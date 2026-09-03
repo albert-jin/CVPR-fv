@@ -52,6 +52,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, Adafactor
 from torch.optim.lr_scheduler import LambdaLR
 
 import configs
+from aggregation import det2ver_sync, score_fusion
 from configs import resolve_backbone_path, BACKBONE_KIND
 from utils import modify_with_lora, count_trainable_params
 
@@ -294,6 +295,7 @@ class CVPRFV(LightningModule):
                 'int_prefix_idx': meta[i]['int_prefix_idx'],
                 'template_idx': meta[i]['template_idx'],
                 'yes_prob': float(yes_prob[i].item()),
+                'choices_scores': choices_scores[i].detach().cpu().tolist(),
                 'gold_v_label': int(v_label[i].item()),
                 'task_flag': int(task_flag[i].item()),
                 'claim': meta[i]['claim'],
@@ -331,31 +333,28 @@ class CVPRFV(LightningModule):
 
     @staticmethod
     def _aggregate(q_true: float, q_false: float, q_uncertain: float,
-                   v: float, lam: float, gamma: float) -> Tuple[int, np.ndarray]:
+                   v: float, lam: float, gamma: float,
+                   fixed_control: bool = False) -> Tuple[int, np.ndarray]:
         """Return (predicted_v_label_idx, normalized_decision_scores).
 
         The output indexing is ``VLabel2Idx`` (SUPPORT=0, REFUTE=1, NEI=2).
         Normalization is convenient for logging only; these values are not
         interpreted as a Bayesian posterior.
         """
-        eps = 1e-12
-        # Decomposition-based compatibility scores (main text Eqs 6-8).
-        l_sup = q_true * (1 - q_false) * (1 - q_uncertain)
-        l_ref = q_false * (1 - q_true) * (1 - q_uncertain)
-        l_nei = q_uncertain * (1 - q_true) * (1 - q_false)
-        raw_scores = np.array([l_sup, l_ref, l_nei])
-        det_scores = (raw_scores + eps) / (raw_scores + eps).sum()
+        return score_fusion(
+            q_true, q_false, q_uncertain, v, lam, gamma,
+            fixed_control=fixed_control,
+        )
 
-        # Verifiability compatibility scores (main text Eqs 9-10).
-        r_nei = (1 - v) + gamma * v
-        r_sr = (1 - gamma) * v / 2.0
-        compatibility = np.array([r_sr, r_sr, r_nei])          # SUPPORT, REFUTE, NEI
+    @staticmethod
+    def _det2ver_sync(choices_scores: np.ndarray) -> Tuple[int, np.ndarray]:
+        """Faithful Det2Ver lookup-then-probability-ranking synchronizer.
 
-        # Log-linear heuristic fusion (main text Eq 11).
-        log_a = np.log(det_scores + eps) + lam * np.log(compatibility + eps)
-        decision_scores = np.exp(log_a - log_a.max())
-        decision_scores = decision_scores / max(decision_scores.sum(), eps)
-        return int(decision_scores.argmax()), decision_scores
+        ``choices_scores`` must have shape ``(3, 2)`` in the prefix order
+        ``(true, uncertain, false)`` and candidate order ``(Yes, No)``.
+        Values are length-normalized NLLs, so smaller is better.
+        """
+        return det2ver_sync(choices_scores)
 
     # ------------------------------------------------------------------
     # Validation epoch end — aggregate and report per-class F1 + macro-F1
@@ -372,7 +371,7 @@ class CVPRFV(LightningModule):
             self._val_predictions = []
             return {}
 
-        # Compute CVP scores for every unique claim seen at eval time.
+        # Compute CVP scores only when the selected inference rule consumes v.
         unique_claims: List[str] = []
         claim_of_instance: Dict[int, str] = {}
         seen = set()
@@ -382,7 +381,11 @@ class CVPRFV(LightningModule):
             if claim not in seen:
                 seen.add(claim)
                 unique_claims.append(claim)
-        v_map = self.cvp_predict(unique_claims) if self.cfg.use_cvp else {c: 0.5 for c in unique_claims}
+        aggregation_mode = getattr(self.cfg, 'aggregation_mode', 'score_fusion')
+        if aggregation_mode not in {'score_fusion', 'det2ver', 'fixed_control'}:
+            raise ValueError(f'unsupported aggregation_mode: {aggregation_mode}')
+        needs_v = aggregation_mode == 'score_fusion' and self.cfg.use_cvp
+        v_map = self.cvp_predict(unique_claims) if needs_v else {c: 0.5 for c in unique_claims}
 
         y_true, y_pred, y_v = [], [], []
         export_rows: List[Dict] = []
@@ -396,10 +399,19 @@ class CVPRFV(LightningModule):
             q_false = q.get(2, 0.5)
             claim = claim_of_instance[instance_idx]
             v = v_map.get(claim, 0.5)
-            pred, decision_scores = self._aggregate(
-                q_true, q_false, q_uncertain, v,
-                lam=configs.lam_prior, gamma=configs.nei_floor_gamma,
-            )
+            if aggregation_mode == 'det2ver':
+                nll_by_prefix = np.full((3, 2), np.nan, dtype=float)
+                for row in rows:
+                    prefix_idx = int(row['int_prefix_idx'])
+                    if 0 <= prefix_idx < 3 and np.isnan(nll_by_prefix[prefix_idx]).all():
+                        nll_by_prefix[prefix_idx] = np.asarray(row['choices_scores'], dtype=float)
+                pred, decision_scores = self._det2ver_sync(nll_by_prefix)
+            else:
+                pred, decision_scores = self._aggregate(
+                    q_true, q_false, q_uncertain, v,
+                    lam=configs.lam_prior, gamma=configs.nei_floor_gamma,
+                    fixed_control=aggregation_mode == 'fixed_control',
+                )
             y_true.append(rows[0]['gold_v_label'])
             y_pred.append(pred)
             y_v.append(v)
@@ -422,6 +434,7 @@ class CVPRFV(LightningModule):
                 'binary_answers_true_uncertain_false': binary_answers,
                 'lookup_conflict': tuple(binary_answers) not in valid_answer_rows,
                 'prediction': configs.Idx2VLabel[int(pred)],
+                'aggregation_mode': aggregation_mode,
                 'decision_scores_support_refute_nei': decision_scores.tolist(),
             })
 

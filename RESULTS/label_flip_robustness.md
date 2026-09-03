@@ -4,7 +4,7 @@
 (``no assessment of how noise in this weak supervision impacts
 downstream performance''). Complements the τ / w_f sensitivity study
 in the main paper (Section 4.1) and the human evaluation in
-[`R1-01a_human_evaluation.md`](R1-01a_human_evaluation.md).*
+[`human_evaluation.md`](human_evaluation.md).*
 
 ## 1. Purpose
 
@@ -30,22 +30,12 @@ identical across corruption levels and simply serve as a floor.
 
 **Command used.**
 ```bash
-for p in 0.05 0.10 0.20; do
-  for ds in fever vc scifact; do
-    for seed in 0 1 2 3 4; do
-      python train.py \
-        --dataset ${ds} --shot_num 4 --seed ${seed} \
-        --use_cvp true --cvp_total_per_dataset 200 \
-        --backbone t0-3b \
-        --exp_name ${ds}_K4_flip${p}_seed${seed} \
-        --cvp_label_flip_rate ${p}   # simple training-time flag
-    done
-  done
-done
+bash run_label_flip_robustness.sh
 ```
 
-(The `--cvp_label_flip_rate` argument is a small extension of
-`train.py`; see `scripts/label_flip_train.py` in the release.)
+The `--cvp_label_flip_rate` argument is implemented in `train.py` and applies
+a seed-controlled corruption mask only to per-run copies of the selected CVP
+examples; clean pseudo-label caches are never overwritten.
 
 ## 3. Results
 
@@ -70,7 +60,7 @@ Macro-F1 (mean ± std over five seeds) on the three FV benchmarks:
    CVPR-FV still beats the Det2Ver baseline by
    +1.6 / +2.6 / +6.8 Macro-F1 on FEVER / VC / SciFACT. This is
    direct evidence that the *architecture* of CVPR-FV (soft
-   likelihoods + verifiability-aware prior) is doing the heavy
+   decomposition scores plus verifiability-aware score fusion) is doing the heavy
    lifting, not the fine-grained accuracy of individual pseudo-labels.
 3. **SciFACT is most sensitive.** With only 300 test claims, small
    perturbations of the CVP head translate into larger F1 swings — a
@@ -93,6 +83,6 @@ minimalist:
 
 Read together with the τ / w_f sensitivity table in Section 4.1 and
 the human evaluation in
-[`R1-01a_human_evaluation.md`](R1-01a_human_evaluation.md), this
+[`human_evaluation.md`](human_evaluation.md), this
 finishes the answer to Reviewer #1's concern about weak-supervision
 quality.

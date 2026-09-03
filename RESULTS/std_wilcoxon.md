@@ -8,9 +8,9 @@ All experiments are run with seeds `{0, 1, 2, 3, 4}` (5 independent
 trials). For each (model × dataset × K) triple we report:
 
 * **mean ± std** of Macro-F1 across the five seeds.
-* **Wilcoxon signed-rank p-value** for the comparison of the seed-level
-  Macro-F1 vectors between CVPR-FV(T0-3B) and each baseline, following
-  the recommendation of Benavoli et al. (2016, JMLR 17).
+* **Cross-dataset tests** using one five-seed mean per dataset, following
+  Demsar (2006) and Benavoli et al. (2016). Seeds quantify training
+  variability; they are not treated as independent datasets.
 
 Code to reproduce (using the logged TensorBoard scalars):
 
@@ -46,7 +46,26 @@ print(f'p = {p:.3f}')
 | Det2Ver | 92.4 ± 0.4 | 67.4 ± 0.6 | 69.6 ± 0.9 |
 | **CVPR-FV (T0-3B)** | **94.2 ± 0.3** | **67.0 ± 0.6** | **72.7 ± 0.8** |
 
-## Wilcoxon signed-rank p-values: CVPR-FV vs baselines (K = 4)
+## Primary cross-dataset significance tests
+
+At K=4, CVPR-FV, matched-budget Det2Ver, and ProToCo are first compared
+with the Friedman test over FEVER, VitaminC, and SciFACT:
+
+* Friedman chi-square = **6.000**, df = 2, **p = 0.049787**.
+* Because the omnibus test rejects at alpha=0.05, two-sided exact Wilcoxon
+  post-hoc tests compare CVPR-FV with each baseline. Both give W=0,
+  unadjusted p=0.250, and Holm-adjusted p=0.500.
+
+At K=32, the planned two-classifier comparison between CVPR-FV and
+matched-budget Det2Ver gives a two-sided exact Wilcoxon result of W=1,
+p=0.500 across the three datasets.
+
+The omnibus ranking at K=4 is therefore non-random under the asymptotic
+Friedman test, but no individual post-hoc pair is significant. The small
+number of datasets gives the exact Wilcoxon tests low power. Reproduce all
+values with `python RESULTS/statistical_tests.py`.
+
+## Seed-level diagnostic Wilcoxon values (not the primary cross-dataset test): K = 4
 
 One-sided test (alternative: CVPR-FV > baseline).
 
@@ -66,7 +85,7 @@ p = 0.063 is the more likely outcome in those cells. Against ProToCo,
 the FEVER gap (+2.6) also yields p = 0.063, while the larger VitaminC
 and SciFACT gaps sustain p = 0.031.)*
 
-## Wilcoxon signed-rank p-values: CVPR-FV vs baselines (K = 32)
+## Seed-level diagnostic Wilcoxon values (not the primary cross-dataset test): K = 32
 
 | Comparison | FEVER | VitaminC | SciFACT |
 |-----------|------:|---------:|--------:|
@@ -75,10 +94,11 @@ and SciFACT gaps sustain p = 0.031.)*
 
 *(VitaminC at K=32 shows weaker statistical significance, consistent
 with the domain-gap discussion in the paper: the adversarial contrastive
-nature of VitaminC limits the benefit of the general-domain CVP prior.)*
+nature of VitaminC limits the benefit of the general-domain CVP score.)*
 
 ## Summary
 
-All key comparisons (FEVER and SciFACT, all K) reach p ≤ 0.05. VitaminC
-at K=32 is the single exception; this is discussed in Section 4.2 and
-constitutes a known limitation of the framework.
+Seed-level dispersion is modest, but the manuscript's inferential claims use
+the more conservative cross-dataset tests above. We therefore report effect
+sizes and the VitaminC reversal directly and do not claim statistically
+significant pairwise gains over the three-dataset benchmark suite.
